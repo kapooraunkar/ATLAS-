@@ -57,3 +57,83 @@ Business responses and telemetry are separate concerns.
 ## Reason
 
 End users should receive clear, safe, and actionable responses, while Atlas records detailed telemetry for engineers. Internal implementation details must never be exposed through user-facing error messages.
+
+## Day 3
+
+### Decision 6
+
+Atlas will use `time.perf_counter()` to measure request duration.
+
+**Reason**
+
+Atlas measures elapsed execution time rather than wall-clock time. `time.perf_counter()` provides a high-resolution monotonic timer that is unaffected by system clock adjustments, making it more reliable for request latency measurements.
+
+### Decision 7
+
+Atlas records every request regardless of outcome.
+
+## Reason:
+
+Successful requests, client errors (4xx), server errors (5xx), and unexpected exceptions all provide valuable operational insight. Atlas observes reality rather than filtering it.
+
+### Decision 8
+
+Telemetry will be represented as a single object throughout the system.
+
+**Reason**
+
+Telemetry is a single domain entity. Passing one object instead of many parameters makes APIs cleaner, easier to extend, and reduces coupling between components. New telemetry fields can be added without changing function signatures.
+
+Variables and fields should encode their units whenever ambiguity exists.
+
+Good
+
+duration_ms
+cpu_percent
+memory_percent
+disk_usage_bytes
+
+Bad
+
+duration
+cpu
+memory
+disk
+
+ATLAS
+│
+├── Resilient infrastructure
+│   ├── Queue
+│   ├── Workers
+│   ├── Persistence
+│   ├── Recovery
+│   └── Failure isolation
+│
+├── Self-observability
+│   ├── Atlas monitors Atlas
+│   ├── Health + telemetry
+│   ├── Capacity/pressure
+│   └── Internal failure detection
+│
+├── Infrastructure observability
+│   ├── Metrics
+│   ├── Logs
+│   ├── Traces
+│   └── Infrastructure signals
+│
+├── Intelligence
+│   ├── Anomaly detection
+│   ├── Spike prediction
+│   ├── Forecasting
+│   ├── Correlation
+│   └── Root-cause analysis
+│
+├── AI layer
+│   ├── LLM
+│   ├── RAG
+│   ├── Vector DB
+│   └── Historical/contextual reasoning
+│
+└── Remediation
+    ├── Recommendations
+    └── Eventually automated actions
