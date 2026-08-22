@@ -18,6 +18,7 @@ from app.services.telemetry_queue import (
 )
 
 from app.services.telemetry_service import process_telemetry
+from app.services.persistence_health import persistence_health
 
 # =========================
 # Worker configuration
@@ -39,6 +40,9 @@ SUPERVISOR_CHECK_INTERVAL = 1
 
 MAX_RESPAWNS = 3
 RESPAWN_WINDOW_SECONDS = 10
+
+MAX_RECOVERY_RESPAWNS = 3
+RECOVERY_RESPAWN_WINDOW_SECONDS = 10
 
 RESTART_BACKOFF_SECONDS = 2
 
@@ -141,35 +145,47 @@ def telemetry_worker():
 
                 for attempt in range(1, MAX_RETRIES + 1):
 
+                    start_time = time.monotonic()
+
                     try:
 
                         process_telemetry(telemetry)
-                        record_processed()
 
-                        # Check whether queue pressure
-                        # has recovered.
-                        get_queue_state()
-
-                        print(
-                            f"Telemetry persisted successfully "
-                            f"(attempt {attempt})"
+                        latency = (time.monotonic - start_time)
+                        persistence_health.record_attempt(
+                            success=True,
+                            latency=latency
                         )
 
-                        persisted = True
+                        record_processed()
 
+                        get_queue_state()
+
+                        print(f"Telemetry persisted successfully attempt {attempt}")
+
+                        persisted = True
                         break
 
                     except Exception as e:
 
+                        latency = (time.monotonic - start_time)
+
+                        persistence_health.record_attempt(
+                            success=False,
+                            latency=latency
+                        )
+
                         print(
-                            f"Telemetry persistence failed "
-                            f"(attempt {attempt}/{MAX_RETRIES}): {e}"
+                            f"Telemetry persistence failed"
+                            f"(attmept {attempt}/{MAX_RETRIES}) : {e}"
                         )
 
                         if attempt < MAX_RETRIES:
-
                             time.sleep(RETRY_DELAY_SECONDS)
 
+                        else:
+                            print(
+                                f"Telemetry persistence failed for request {telemetry.request_id}")
                             
         #THIS IS AFTER ALL RETRY ATTEMPTS 
                 if not persisted:
@@ -295,6 +311,8 @@ def recovery_worker_supervisor():
 
     replacement_number = 0
 
+    recovery_respawn_times = deque()
+
     for worker_number in range(RECOVERY_WORKER_COUNT):
 
         worker = Thread(
@@ -330,19 +348,40 @@ def recovery_worker_supervisor():
 
                     print(f"{worker.name} {reason}")
 
+                while(
+                    recovery_respawn_times and 
+                    now - recovery_respawn_times[0] > RECOVERY_RESPAWN_WINDOW_SECONDS
+                ):
+                    recovery_respawn_times.popleft()
+
+                if len(recovery_respawn_times) >= MAX_RECOVERY_RESPAWNS:
+
+                    print(
+                        f"{worker.name} "
+                        f"Respawn limit reached. "
+                        f"Not restarting worker."
+                        )
+
                     recovery_workers.remove(worker)
-                    replacement_number += 1
 
-                    replacement = Thread(
-                        target= failed_telemetry_worker,
-                        daemon= True,
-                        name= (f"failed-telemetry-recovery-replacement-{replacement_number}"
-                    )
+                    continue
+
+                recovery_workers.remove(worker)
+                replacement_number += 1
+
+                replacement = Thread(
+                    target= failed_telemetry_worker,
+                    daemon= True,
+                    name= (f"failed-telemetry-recovery-replacement-{replacement_number}"
                 )
-                replacement.start()
+            )
+            replacement.start()
 
-                recovery_workers.append(replacement)
-                print(f"Start {replacement.name}")
+            recovery_workers.append(replacement)
+            print(f"Start {replacement.name}")
+
+            recovery_respawn_times.append(time.monotonic())
+            print(f"Started {replacement.name}")
 
         time.sleep(RECOVERY_SUPERVISOR_CHECK_INTERVAL)
 
