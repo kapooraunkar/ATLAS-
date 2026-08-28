@@ -1,6 +1,7 @@
 import time
 from enum import Enum
 from collections import deque
+from threading import RLock
 
 class PersistenceState(Enum):
     HEALTHY = "healthy"
@@ -19,10 +20,13 @@ UNHEALTHY_LATENCY_SECONDS = 2.0
 class PersistenceHealth:
     def __init__(self):
         self.attempts = deque()
+        self.probes = deque()
         self.state = PersistenceState.HEALTHY
+        self.lock = RLock()
 
     def get_state(self) -> PersistenceState:
-        return self.state
+        with self.lock:
+            return self.state
 
     def _remove_old_attempts(self):
         cutoff = time.monotonic() - HEALTH_WINDOW_SECONDS
@@ -30,17 +34,44 @@ class PersistenceHealth:
         while(self.attempts and self.attempts[0][0] < cutoff):
             self.attempts.popleft()
 
-    def record_attempt(self,
+    def _remove_old_probes(self):
+
+        cutoff = (
+            time.monotonic()
+            - HEALTH_WINDOW_SECONDS
+        )
+
+        while (
+            self.probes
+            and self.probes[0][0] < cutoff
+        ):
+            self.probes.popleft()
+
+    def record_persistence_attempt(self,
         success: bool,
         latency: float
     ):
-        self.attempts.append((
-            time.monotonic(),success,latency
-        ))
+        with self.lock:
 
-        self._remove_old_attempts()
-        self._update_state()
+            print(
+                f"Persistence attempt recorded: "
+                f"success={success}, latency={latency:.6f}s"
+            )
 
+
+            self.attempts.append((
+                time.monotonic(),success,latency
+            ))
+
+            self._remove_old_attempts()
+            self._update_state()
+
+    def record_probe_result(self,success:bool,latency:float):
+
+        with self.lock:
+            self.probes.append((time.monotonic(), success, latency))
+                               
+            self._remove_old_probes()
 
     def _update_state(self):
 
@@ -58,7 +89,7 @@ class PersistenceHealth:
         elif (failure_rate >= DEGRADED_FAILURE_RATE
               or average_latency >= DEGRADED_LATENCY_SECONDS):
 
-            self.state = PersistenceState.UNHEALTHY
+            self.state = PersistenceState.DEGRADED
 
 
         else:
@@ -79,31 +110,33 @@ class PersistenceHealth:
 
     def get_metrics(self):
 
-        total_attempts = len(self.attempts)
+        with self.lock:
 
-        if total_attempts == 0:
+            total_attempts = len(self.attempts)
+
+            if total_attempts == 0:
+                return {
+                    "failure_rate": 0.0,
+                    "average_latency": 0.0,
+                    "attempts": 0
+                }
+            
+            failures = sum(
+                1
+                for _,success, _ in self.attempts
+                if not success)
+            
+            failure_rate = (failures / total_attempts)
+            
+            average_latency = (sum(
+                latency
+                for _, _, latency in self.attempts
+                )/ total_attempts)
+
             return {
-                "failure_rate": 0.0,
-                "average_latency": 0.0,
-                "attempts": 0
+                "failure_rate": failure_rate,
+                "average_latency": average_latency,
+                "attempts": total_attempts
             }
-        
-        failures = sum(
-            1
-            for _,success, _ in self.attempts
-            if not success)
-        
-        failure_rate = (failures / total_attempts)
-        
-        average_latency = (sum(
-            latency
-            for _, _, latency in self.attempts
-            )/ total_attempts)
-
-        return {
-            "failure_rate": failure_rate,
-            "average_latency": average_latency,
-            "attempts": total_attempts
-        }
 
 persistence_health = PersistenceHealth()

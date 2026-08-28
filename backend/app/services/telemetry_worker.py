@@ -2,6 +2,7 @@ import time
 from threading import Thread, Lock, current_thread, Event
 from collections import deque
 from queue import Empty,Full
+from enum import Enum
 
 from app.services.telemetry_queue import (
     telemetry_queue,
@@ -17,12 +18,14 @@ from app.services.telemetry_queue import (
 
 )
 
-from app.services.telemetry_service import process_telemetry
-from app.services.persistence_health import persistence_health
+from app.services.telemetry_service import process_telemetry,check_persistence_health
+from app.services.persistence_health import persistence_health, PersistenceState
 
 # =========================
 # Worker configuration
 # =========================
+
+PERSISTENCE_PROBE_INTERVAL = 5
 
 FAILED_RETRY_INTERVAL = 10
 
@@ -35,6 +38,8 @@ WORKER_TIMEOUT = 15
 RECOVERY_HEARTBEAT_INTERVAL = 5
 RECOVERY_WORKER_TIMEOUT = 15
 RECOVERY_SUPERVISOR_CHECK_INTERVAL = 1
+
+LIMITED_RECOVERY_DELAY = 2
 
 SUPERVISOR_CHECK_INTERVAL = 1
 
@@ -50,6 +55,14 @@ MAX_RETRIES = 3
 RETRY_DELAY_SECONDS = 1
 
 
+
+class RecoveryMode(Enum):
+    NORMAL = "normal"
+    LIMITED = "limited"
+    PAUSED = "paused"
+
+
+
 # =========================
 # Worker heartbeat state
 # =========================
@@ -59,6 +72,9 @@ heartbeat_lock = Lock()
 
 recovery_worker_heartbeats = {}
 recovery_heartbeat_lock = Lock()
+
+persistence_probe_lock = Lock()
+last_persistence_probe = 0.0
 
 
 # =========================
@@ -95,6 +111,34 @@ def recovery_worker_heartbeat(worker_name,stop_event):
     with recovery_heartbeat_lock:
 
         recovery_worker_heartbeats.pop(worker_name,None)
+
+def should_probe_persistence():
+
+    global last_persistence_probe
+
+    now = time.monotonic()
+
+    with persistence_probe_lock:
+
+        if now - last_persistence_probe < PERSISTENCE_PROBE_INTERVAL:
+            return False
+
+        last_persistence_probe = now
+        return True
+
+# =========================
+# RECOVERY MODE
+# =========================
+
+def get_recovery_mode():
+    state = persistence_health.get_state()
+
+    if state == PersistenceState.HEALTHY:
+        return RecoveryMode.NORMAL
+    elif state == PersistenceState.DEGRADED:
+        return RecoveryMode.LIMITED
+    else:
+        return RecoveryMode.PAUSED
 
 # =========================
 # Telemetry worker
@@ -151,8 +195,8 @@ def telemetry_worker():
 
                         process_telemetry(telemetry)
 
-                        latency = (time.monotonic - start_time)
-                        persistence_health.record_attempt(
+                        latency = (time.monotonic() - start_time)
+                        persistence_health.record_persistence_attempt(
                             success=True,
                             latency=latency
                         )
@@ -168,9 +212,9 @@ def telemetry_worker():
 
                     except Exception as e:
 
-                        latency = (time.monotonic - start_time)
+                        latency = (time.monotonic() - start_time)
 
-                        persistence_health.record_attempt(
+                        persistence_health.record_persistence_attempt(
                             success=False,
                             latency=latency
                         )
@@ -238,59 +282,134 @@ def failed_telemetry_worker():
 
             while True:
 
-                next_retry_time, sequence_number, failed_item = (
+                next_retry_time, _, failed_item = (
                     failed_telemetry_queue.get()
                 )
 
-                try:
+                now = time.monotonic()
+                if now < next_retry_time:
+
+                    time.sleep(next_retry_time-now)
 
                     now = time.monotonic()
 
-                    if now < next_retry_time:
+                mode = get_recovery_mode()
 
-                        time.sleep(
-                            next_retry_time - now
+# =========================
+# PAUSED
+# =========================
+
+                if mode == RecoveryMode.PAUSED:
+
+                    if should_probe_persistence():
+
+                        success, latency = (
+                            check_persistence_health()
                         )
 
-                    telemetry = failed_item.telemetry
-
-                    try:
-
-                        process_telemetry(telemetry)
-
-                        print(
-                            f"Failed telemetry recovered successfully "
-                            f"{telemetry.request_id}"
+                        persistence_health.record_probe_result(
+                            success=success,
+                            latency=latency
                         )
 
-                    except Exception as e:
+                    failed_item.next_retry_time = (
+                        time.monotonic()
+                        + FAILED_RETRY_INTERVAL
+                    )
 
-                        failed_item.retry_count += 1
+                    requeue_failed_telemetry(
+                        failed_item
+                    )
 
-                        if failed_item.retry_count >= MAX_RECOVERY_RETRIES:
-                            move_to_dead_letter(failed_item)
+                    continue
 
-                            continue
 
-                        backoff = min(
-                            60,
-                            2 ** failed_item.retry_count
-                        )
+                # =========================
+                # LIMITED
+                # =========================
 
-                        failed_item.next_retry_time = (
-                            time.monotonic() + backoff
-                        )
+                if mode == RecoveryMode.LIMITED:
 
-                        print(
-                            f"Recovery failed for "
-                            f"{telemetry.request_id}. "
-                            f"Retry #{failed_item.retry_count} "
-                            f"in {backoff}s: {e}"
-                        )
+                    print(
+                        f"Persistence degraded. "
+                        f"Delaying recovery for "
+                        f"{LIMITED_RECOVERY_DELAY}s"
+                    )
 
-                        requeue_failed_telemetry(
+                    time.sleep(
+                        LIMITED_RECOVERY_DELAY
+                    )
+
+
+                # =========================
+                # NORMAL + LIMITED
+                # =========================
+
+                start_time = time.monotonic()
+
+                try:
+
+                    process_telemetry(
+                        failed_item.telemetry
+                    )
+
+                    latency = (
+                        time.monotonic()
+                        - start_time
+                    )
+
+                    persistence_health.record_persistence_attempt(
+                        success=True,
+                        latency=latency
+                    )
+
+                    print(
+                        f"Failed telemetry recovered successfully "
+                        f"{failed_item.telemetry.request_id}"
+                    )
+
+                except Exception as e:
+
+                    latency = (
+                        time.monotonic()
+                        - start_time
+                    )
+
+                    persistence_health.record_persistence_attempt(
+                        success=False,
+                        latency=latency
+                    )
+
+                    failed_item.retry_count += 1
+
+                    if failed_item.retry_count >= MAX_RECOVERY_RETRIES:
+
+                        move_to_dead_letter(
                             failed_item
                         )
+
+                        continue
+
+                    backoff = min(
+                        60,
+                        2 ** failed_item.retry_count
+                    )
+
+                    failed_item.next_retry_time = (
+                        time.monotonic()
+                        + backoff
+                    )
+
+                    print(
+                        f"Recovery failed for "
+                        f"{failed_item.telemetry.request_id}. "
+                        f"Retry #{failed_item.retry_count} "
+                        f"in {backoff}s: {e}"
+                    )
+
+                    requeue_failed_telemetry(
+                        failed_item
+                    )
 
                 finally:
 
