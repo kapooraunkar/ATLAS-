@@ -3,9 +3,10 @@ from app.database.connection import get_connection
 import time 
 
 def process_telemetry(telemetry: Telemetry):
-
    
-    
+    time.sleep(0.5)
+    print("TEST: SQLite persistence failure")
+    raise Exception("Simulated SQLite persistence failure")
     print("\n========== TELEMETRY ==========")
     print(f"Request ID  : {telemetry.request_id}")
     print(f"Method      : {telemetry.method}")
@@ -44,3 +45,32 @@ def process_telemetry(telemetry: Telemetry):
 
     connection.commit()
     connection.close()
+
+def check_persistence_health():
+
+    start_time = time.monotonic()
+
+    connection = None
+
+    try:
+        connection = get_connection()
+
+        connection.execute("SELECT 1")
+
+        latency = (time.monotonic() - start_time)
+
+        return True, latency
+
+    except Exception as e:
+
+        latency = (time.monotonic() - start_time)
+
+        print(f"Persistence health check failed: {e}")
+
+        return False, latency
+
+    finally:
+
+        if connection is not None:
+            connection.close()
+

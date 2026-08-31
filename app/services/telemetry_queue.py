@@ -1,18 +1,30 @@
 import time
-from queue import PriorityQueue,Full, Queue
+from queue import PriorityQueue,Full
 from enum import Enum
+from dataclasses import dataclass
 
 class QueueState(Enum):
     NORMAL = "normal"
     PRESSURE = "pressure"
     CRITICAL = "critical"
 
-MAX_QUEUE_SIZE = 10000
+@dataclass
+class FailedTelemetry:
+    telemetry: object
+    retry_count: int = 0
+    next_retry_time: float = 0.0
 
+MAX_QUEUE_SIZE = 10
 FAILED_QUEUE_SIZE = 1000
-failed_telemetry_queue = Queue(maxsize=FAILED_QUEUE_SIZE)
+
+DLQ_SIZE = 5000
+MAX_RECOVERY_RETRIES = 10
+
+failed_telemetry_queue =PriorityQueue(maxsize=FAILED_QUEUE_SIZE)
+dead_letter_queue = PriorityQueue(maxsize=DLQ_SIZE)
 
 telemetry_queue = PriorityQueue(maxsize=MAX_QUEUE_SIZE)
+
 queue_state = QueueState.NORMAL
 
 ingested_count = 0
@@ -23,6 +35,7 @@ last_ingested_count = 0
 last_processed_count = 0
 
 sequence_number = 0
+failed_sequence_number = 0
 
 
 def get_priority(status_code: int) -> int:
@@ -231,11 +244,26 @@ def get_queue_state() -> QueueState:
 
 def add_failed_telemetry(telemetry):
 
+    global failed_sequence_number
+
+    failed_item = FailedTelemetry(
+        telemetry=telemetry,
+        retry_count=0,
+        next_retry_time=time.monotonic()+10
+    )
+
+    failed_sequence_number += 1
+
     try:
 
         failed_telemetry_queue.put_nowait(
-            telemetry
+            (
+            failed_item.next_retry_time,
+            failed_sequence_number,
+            failed_item
+            
         )
+    )
 
         print(
             f"Telemetry moved to failed queue: {telemetry.request_id}"
@@ -248,6 +276,52 @@ def add_failed_telemetry(telemetry):
         print(f"FAILED QUEUE FULL. "
             f"Unable to preserve telemetry: "
             f"{telemetry.request_id}"
+        )
+
+        return False
+
+
+def requeue_failed_telemetry(failed_item):
+
+    global failed_sequence_number
+
+    failed_sequence_number += 1
+    failed_telemetry_queue.put_nowait(
+        (
+            failed_item.next_retry_time,
+            failed_sequence_number,
+            failed_item
+        )
+    )
+
+def move_to_dead_letter(failed_item):
+    global failed_sequence_number
+
+    failed_sequence_number += 1
+
+    try:
+
+        dead_letter_queue.put_nowait(
+            (
+                time.monotonic(),
+                failed_sequence_number,
+                failed_item
+            )
+        )
+
+        print(
+            f"Telemetry moved to DLQ: {failed_item.telemetry.request_id}"
+            f"(retries: {failed_item.retry_count})"
+        )
+
+        return True
+
+    except Full:
+
+        print(
+            f"DLQ FULL. "
+            f"Unable to preserve telemetry: "
+            f"{failed_item.telemetry.request_id}"
         )
 
         return False
