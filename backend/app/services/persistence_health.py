@@ -2,6 +2,7 @@ import time
 from enum import Enum
 from collections import deque
 from threading import RLock
+from app.services.system_health import (system_health_bus,HealthEvent)
 
 class PersistenceState(Enum):
     HEALTHY = "healthy"
@@ -66,12 +67,30 @@ class PersistenceHealth:
             self._remove_old_attempts()
             self._update_state()
 
+        event = self._update_state()
+
+        if event is not None:
+            system_health_bus.publish(event)
+
     def record_probe_result(self,success:bool,latency:float):
+
+        recovered = False
 
         with self.lock:
             self.probes.append((time.monotonic(), success, latency))
-                               
+
             self._remove_old_probes()
+
+            if success and self.state == PersistenceState.UNHEALTHY:
+              recovered = True
+
+              self.state = PersistenceState.DEGRADED
+              print(
+                    "Persistence probe succeeded: UNHEALTHY -> DEGRADED")
+        if recovered:
+            system_health_bus.publish(HealthEvent.PERSISTENCE_RECOVERED)
+
+
 
     def _update_state(self):
 
@@ -107,6 +126,16 @@ class PersistenceHealth:
                 f"{average_latency:.3f}s)"
             )
 
+            if self.state == PersistenceState.UNHEALTHY:
+                system_health_bus.publish(HealthEvent.PERSISTENCE_FAILURE)
+
+            if (
+                previous_state == PersistenceState.UNHEALTHY
+                and self.state != PersistenceState.UNHEALTHY
+            ):
+                return HealthEvent.PERSISTENCE_RECOVERED
+
+        return None
 
     def get_metrics(self):
 
@@ -120,14 +149,14 @@ class PersistenceHealth:
                     "average_latency": 0.0,
                     "attempts": 0
                 }
-            
+
             failures = sum(
                 1
                 for _,success, _ in self.attempts
                 if not success)
-            
+
             failure_rate = (failures / total_attempts)
-            
+
             average_latency = (sum(
                 latency
                 for _, _, latency in self.attempts

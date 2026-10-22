@@ -6,6 +6,10 @@ class HealthEvent(Enum):
     PERSISTENCE_RECOVERED = "persistence_recovered"
     SYSTEM_EMERGENCY = "system_emergency"
 
+    BACKPRESSURE_ELEVATED = "backpressure_elevated"
+    BACKPRESSURE_HIGH = "backpressure_high"
+    BACKPRESSURE_SEVERE = "backpressure_severe"
+    BACKPRESSURE_RECOVERED = "backpressure_recovered"
 
 class SystemHealthBus:
 
@@ -14,12 +18,21 @@ class SystemHealthBus:
         self.lock = RLock()
 
     def subscribe(self,callback):
-        self.subscribers.append(callback)
+        with self.lock:
+            self.subscribers.append(callback)
 
     def publish(self,event):
 
         with self.lock:
             subscribers = self.subscribers.copy()
 
-            for callback in subscribers:
-                callback(event)
+        for callback in subscribers:
+            callback(event)
+
+system_health_bus = SystemHealthBus()
+
+
+def test_health_event(event):
+    print(f"Recieved health event: {event.value}")
+system_health_bus.subscribe(test_health_event)
+system_health_bus.publish(HealthEvent.PERSISTENCE_FAILURE)

@@ -1,10 +1,10 @@
 from enum import Enum
 from threading import RLock
-import time 
+import time
 import random
 
 CIRCUIT_FAILURE_THRESHOLD = 3
-CIRCUIT_RECOVERY_TIMEOUT = 10   
+CIRCUIT_RECOVERY_TIMEOUT = 10
 
 CIRCUIT_JITTER_SECONDS = 2
 
@@ -14,7 +14,7 @@ class CircuitState(Enum):
     HALF_OPEN = "half_open"
 
 
-class SharedCircuitBreaker:
+class CircuitBreaker:
 
     def __init__(self):
         self.state = CircuitState.CLOSED
@@ -26,7 +26,7 @@ class SharedCircuitBreaker:
 
     def get_state(self) -> CircuitState:
         with self.lock:
-            return self.state 
+            return self.state
 
     def open(self):
         with self.lock:
@@ -42,7 +42,7 @@ class SharedCircuitBreaker:
                 self.opened_at
                 + CIRCUIT_RECOVERY_TIMEOUT
                 + jitter
-            
+
             )
 
     def half_open(self):
@@ -56,13 +56,19 @@ class SharedCircuitBreaker:
 
     def record_failure(self):
         with self.lock:
+
+            print(
+            f"Circuit success recorded: "
+            f"state={self.state.value.upper()}"
+            )
+
             self.failure_count += 1
             self.half_open_probe_in_progress = False
 
             if self.failure_count >= CIRCUIT_FAILURE_THRESHOLD:
                 self.open()
 
-    def record_success(self):  # a succesfull attempt while half open restores the circuit 
+    def record_success(self):  # a succesfull attempt while half open restores the circuit
         with self.lock:
 
             self.failure_count = 0
@@ -83,10 +89,10 @@ class SharedCircuitBreaker:
                     self._change_state(CircuitState.HALF_OPEN)
                     self.half_open_probe_in_progress = True
                     return True
-                
+
                 return False
 
-            
+
             if self.state == CircuitState.HALF_OPEN:
 
                 if self.half_open_probe_in_progress:
@@ -98,11 +104,19 @@ class SharedCircuitBreaker:
 
         if self.state != new_state:
             print(
-                (f"Circuit state changed: ")
-                (f"{self.state.value.upper()} -> ")
-                (f"{new_state.value.upper()}")
+                f"Circuit state changed: "
+                f"{self.state.value.upper()} -> "
+                f"{new_state.value.upper()}"
             )
 
         self.state = new_state
 
-shared_circuit = SharedCircuitBreaker()
+    def respond_to_system_failure(self):  #system announced that the dependency is unhealthy
+        with self.lock:
+            self.open()
+
+    def respond_to_system_recovery(self):
+        with self.lock:
+            if self.state == CircuitState.OPEN:
+                self._change_state(CircuitState.HALF_OPEN)
+                self.half_open_probe_in_progress = False

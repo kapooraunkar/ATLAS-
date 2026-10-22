@@ -1,16 +1,39 @@
-# Virtual Environment
-.venv/
 
-# Python Cache
+@'
+# Python
 __pycache__/
 *.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
 
-# Environment Variables
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
 
-# VS Code Settings
+# Local databases and telemetry data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# IDE and editor files
 .vscode/
+.idea/
 
-# OS Files
+# Operating system files
 .DS_Store
 Thumbs.db
+'@ | Set-Content -Encoding utf8 .\backend\.gitignore
