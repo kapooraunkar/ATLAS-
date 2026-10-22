@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 @'
 # Python
 __pycache__/
@@ -6,21 +7,38 @@ __pycache__/
 .mypy_cache/
 
 # Virtual environments
+=======
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+>>>>>>> 3b694cf008f3596f9a2369cdf9f3d4e335315b05
 .venv/
 venv/
 env/
 
+<<<<<<< HEAD
 # Secrets and local configuration
+=======
+# Environment variables / secrets
+>>>>>>> 3b694cf008f3596f9a2369cdf9f3d4e335315b05
 .env
 .env.*
 !.env.example
 
+<<<<<<< HEAD
 # Local databases and telemetry data
 data/
+=======
+# SQLite databases
+>>>>>>> 3b694cf008f3596f9a2369cdf9f3d4e335315b05
 *.db
 *.sqlite
 *.sqlite3
 
+<<<<<<< HEAD
 # Logs
 *.log
 
@@ -29,3 +47,21 @@ data/
 .DS_Store
 Thumbs.db
 '@ | Set-Content .gitignore
+=======
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+>>>>>>> 3b694cf008f3596f9a2369cdf9f3d4e335315b05
