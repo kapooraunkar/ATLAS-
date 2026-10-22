@@ -1,40 +1,28 @@
 # ATLAS — AI-Native Infrastructure Intelligence Platform
 
-**Building reliable infrastructure monitoring, telemetry processing, and AI-assisted incident intelligence.**
+**A reliability-focused infrastructure intelligence platform for telemetry ingestion, resilient processing, operational health, and AI-assisted incident analysis.**
 
-ATLAS is a personal engineering project focused on building an infrastructure intelligence platform that collects telemetry, monitors its own operational health, handles component failures, and lays the foundation for intelligent incident analysis.
+ATLAS is an actively developed engineering project exploring how infrastructure systems can do more than collect metrics. It is designed to ingest telemetry, make processing failures visible, recover from component problems, and establish a foundation for evidence-based incident investigation.
 
-The long-term goal is to move beyond collecting metrics: ATLAS aims to understand infrastructure behavior, identify anomalies, correlate operational signals, and recommend evidence-based remediation while keeping humans in control.
+The long-term direction is to connect telemetry, health events, anomaly detection, forecasting, and operational knowledge so that ATLAS can help explain *what is happening, why it may be happening, and what an operator could do next*—with humans retaining control over consequential actions.
 
-> **Project status:** Active development. The telemetry ingestion, processing, persistence, health-monitoring, and querying foundations are implemented. AI-assisted analysis and additional infrastructure integrations are planned.
+> **Status:** The current project focuses on telemetry processing and reliability foundations. AI-assisted analysis, forecasting, RAG, and additional infrastructure integrations are roadmap items, not claims of completed functionality.
 
-## Contents
+## Why ATLAS?
 
-- [Vision](#vision)
-- [Architecture](#architecture)
-- [Implemented Features](#implemented-features)
-- [Technology Stack](#technology-stack)
-- [Getting Started](#getting-started)
-- [API Endpoints](#api-endpoints)
-- [Reliability Design](#reliability-design)
-- [Roadmap](#roadmap)
-- [Engineering Principles](#engineering-principles)
+Metrics are useful, but a metric by itself rarely explains an incident. A useful infrastructure platform also needs to make its own failures observable, manage pressure when components fall behind, and provide a traceable path from incoming telemetry to stored and queryable records.
 
-## Vision
+ATLAS explores that engineering problem through three themes:
 
-Modern infrastructure generates large amounts of telemetry, but collecting metrics alone does not explain why a system is failing.
+- **Observe:** Collect application telemetry and expose internal operational metrics.
+- **Protect:** Handle queue pressure, persistence failures, worker problems, and recovery paths.
+- **Investigate:** Make telemetry and health information queryable as a foundation for future anomaly detection and AI-assisted incident analysis.
 
-ATLAS is being developed around three capabilities:
-
-1. **Observe** — collect application telemetry and measure internal system health.
-2. **Understand** — identify unusual behavior, investigate failures, and correlate relevant evidence.
-3. **Assist** — use forecasting, anomaly detection, and AI-assisted reasoning to recommend appropriate actions.
-
-The platform is designed to observe its own behavior as well as telemetry from external applications. This dogfooding approach makes ATLAS both an infrastructure platform and a system for exploring reliability engineering.
+A core design principle is **dogfooding**: ATLAS should expose and monitor the behavior of its own components, not only external applications.
 
 ## Architecture
 
-ATLAS currently uses a modular Python backend built around FastAPI, background workers, and SQLite persistence.
+ATLAS currently uses a modular Python backend built around FastAPI, background processing, and SQLite persistence.
 
 ```mermaid
 flowchart TD
@@ -62,112 +50,65 @@ flowchart TD
 ### Telemetry lifecycle
 
 1. Telemetry originates from ATLAS middleware or an external application.
-2. Pydantic validates incoming external payloads.
-3. Accepted records enter the existing telemetry queue.
-4. Background workers process telemetry and attempt persistence.
+2. FastAPI and Pydantic validate external payloads.
+3. Accepted records enter the telemetry queue.
+4. Background workers process records and attempt persistence.
 5. Failed persistence attempts use the existing retry and recovery mechanisms.
 6. Records that exhaust their recovery path can be routed to the dead letter queue.
-7. Operational health and metrics provide visibility into the processing pipeline.
+7. Internal metrics, health signals, and structured logs provide visibility into the pipeline.
 8. The query API retrieves stored records, including source-specific telemetry.
 
-## Implemented Features
+The architecture starts as a **modular monolith**. Additional infrastructure should be introduced when a demonstrated reliability, scaling, or deployment requirement justifies the added complexity.
 
-### Telemetry collection and ingestion
+## Implemented Capabilities
 
-- HTTP request instrumentation through FastAPI middleware.
-- Structured telemetry schema with request IDs, request metadata, duration, CPU and memory measurements, and source identification.
+The following reflects the project's documented current implementation. Individual components and failure paths should continue to be validated through tests and failure-injection scenarios.
+
+### Telemetry Ingestion and Querying
+
+- FastAPI middleware for internal request instrumentation.
+- Structured telemetry payloads containing request identifiers, request metadata, duration, CPU and memory measurements, and source information.
 - External telemetry ingestion through `POST /ingest`.
 - Request validation using Pydantic and FastAPI.
 - Source-aware telemetry storage and querying.
+- `GET /telemetry` query support with source filtering and bounded result counts.
 
-### Resilient processing
+### Resilient Processing
 
 - Background telemetry workers and failed-telemetry recovery workers.
-- Queue capacity and priority-aware admission behavior.
+- Queue-capacity and priority-aware admission behavior.
 - Backpressure and load shedding.
 - Persistence-health states: `HEALTHY`, `DEGRADED`, and `UNHEALTHY`.
 - Circuit breakers and system-health event propagation.
 - Worker heartbeats, supervision, and recovery workflows.
-- Dead letter handling for records that cannot be processed through the normal recovery path.
+- Dead-letter handling for records that cannot proceed through the normal recovery path.
 
-### Operational observability
+### Operational Observability
 
 - Internal metrics aggregation.
-- Prometheus-compatible metrics endpoint.
+- Prometheus-compatible metrics exposition.
 - Health and readiness endpoints.
 - Structured logging with request-ID correlation across worker processing and recovery.
 - A control loop for coordinating system-health behavior.
-
-### Telemetry querying
-
-- Retrieve recent telemetry through `GET /telemetry`.
-- Filter records by source.
-- Limit result counts to prevent unbounded queries.
-- Parameterized SQL queries and database connection cleanup.
 
 ## Technology Stack
 
 | Area | Technologies |
 |---|---|
-| Backend API | Python, FastAPI |
-| Data validation | Pydantic |
+| API and Backend | Python, FastAPI |
+| Data Validation | Pydantic |
 | Persistence | SQLite |
-| Background processing | Python worker threads and queues |
-| Reliability | Retries, circuit breakers, backpressure, load shedding, dead letter handling |
-| Observability | Prometheus metrics, structured logging, request correlation |
-| Distributed tracing | OpenTelemetry and Jaeger experience |
-| AI/ML direction | Anomaly detection, forecasting, LLMs, and Retrieval-Augmented Generation (planned) |
+| Background Processing | Python worker threads and queues |
+| Reliability Patterns | Retries, circuit breakers, backpressure, load shedding, dead-letter handling |
+| Operational Observability | Prometheus metrics, structured logging, request correlation |
+| Tracing Experience | OpenTelemetry, Jaeger |
+| Planned AI/ML Direction | Anomaly detection, time-series forecasting, LLM-assisted analysis, retrieval-augmented generation |
 
-The architecture starts as a modular monolith. Additional infrastructure such as Kafka, distributed storage, and dedicated services will be introduced when a concrete reliability, scaling, or deployment requirement justifies the complexity.
+OpenTelemetry and Jaeger are part of the project's tracing experience; they should not be interpreted as proof that every tracing integration is currently deployed in the main ATLAS pipeline. Likewise, the AI/ML items above describe the intended direction rather than completed features.
 
-## Getting Started
+## API Overview
 
-### Prerequisites
-
-- Python installed
-- Git
-- PowerShell on Windows, or an equivalent terminal
-
-### 1. Clone the repository
-
-```bash
-git clone https://github.com/YOUR_USERNAME/ATLAS.git
-cd ATLAS/backend
-```
-
-Replace `YOUR_USERNAME` with your GitHub username.
-
-### 2. Create a virtual environment
-
-On Windows PowerShell:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-### 3. Install dependencies
-
-If the project includes `requirements.txt`:
-
-```powershell
-pip install -r requirements.txt
-```
-
-### 4. Start the application
-
-```powershell
-uvicorn app.main:app --reload
-```
-
-The development server should be available at:
-
-- Application root: `http://127.0.0.1:8000/`
-- Interactive API documentation: `http://127.0.0.1:8000/docs`
-
-**Note:** These instructions assume the repository includes a complete dependency file and the current database initialization configuration. Verify both before publishing the README as final setup documentation.
-
-## API Endpoints
+The documented API surface includes the following endpoints:
 
 | Method | Endpoint | Purpose |
 |---|---|---|
@@ -180,9 +121,7 @@ The development server should be available at:
 | `GET` | `/metrics` | Expose Prometheus metrics |
 | `GET` | `/docs` | Interactive API documentation |
 
-### Submit external telemetry
-
-Example request:
+### Example: Submit Telemetry
 
 ```http
 POST /ingest
@@ -202,45 +141,39 @@ Content-Type: application/json
 }
 ```
 
-A successful queue admission returns `202 Accepted`. Invalid request bodies are rejected by FastAPI validation, while requests that cannot be accepted by the queue receive an error response.
+A successful queue admission is documented to return `202 Accepted`. This means the record has been accepted for processing; it does **not** guarantee that persistence has already completed. Invalid payloads are rejected by request validation, while records the queue cannot accept receive an error response.
 
-A `202` response indicates acceptance for processing, not a guarantee that the record has already been persisted.
-
-### Query telemetry by source
+### Example: Query Telemetry by Source
 
 ```http
 GET /telemetry?source=demo-service&limit=10
 ```
 
-The query API returns matching records, newest first, subject to the configured result limit.
+The query API returns matching records newest first, subject to the configured result limit.
 
-**Security note:** The current ingestion API is a development implementation and should not be exposed publicly without appropriate authentication, authorization, and request controls.
+> **Security note:** Treat the ingestion API as a development implementation unless authentication, authorization, rate limits, and appropriate deployment controls have been added and verified. Do not expose it publicly on the assumption that the example configuration is production-secure.
 
 ## Reliability Design
 
-ATLAS is being built with explicit failure handling rather than assuming every component remains healthy.
+### Persistence Failures and Recovery
 
-### Persistence failures
+The persistence-health subsystem tracks operational state and publishes health events when failures or recoveries are detected. Workers use retry, recovery, and dead-letter workflows to handle failed records.
 
-The persistence-health subsystem tracks operational state and publishes health events when failures or recoveries are detected. Workers use the existing retry, recovery, and dead letter workflows to handle failed records.
+A documented next step is to coordinate recovery more deliberately after persistence becomes healthy again, including controlled retries for eligible records that reached the dead-letter queue.
 
-The next reliability milestone is to coordinate recovery more deliberately when persistence becomes healthy again, including controlled retries for eligible records that reached the dead letter queue.
+### Backpressure and Load Shedding
 
-### Backpressure and load shedding
+Queues cannot grow without limits. ATLAS uses queue capacity, processing pressure, and telemetry priority to guide admission and load-shedding behavior. The goal is to protect the processing pipeline under load while making dropped or failed telemetry visible through operational metrics.
 
-Queues cannot grow without limits. ATLAS uses queue capacity, processing pressure, and telemetry priority to guide admission and load-shedding behavior.
+### Internal Observability
 
-The objective is to protect the processing pipeline under load while making dropped or failed telemetry visible through operational metrics.
-
-### Observability
-
-ATLAS exposes internal metrics, health endpoints, Prometheus metrics, and structured logs with request correlation. These features are intended to help identify bottlenecks and investigate failures across the telemetry lifecycle.
+Internal metrics, health endpoints, Prometheus exposition, and structured logs with request correlation help make the telemetry pipeline itself observable. This supports debugging bottlenecks and investigating failures across the telemetry lifecycle.
 
 ## Roadmap
 
-The roadmap is organized around measurable engineering capabilities rather than adding technologies for their own sake.
+Roadmap items are planned work, not completed capabilities.
 
-### Phase 1 — Reliability and telemetry foundations
+### Phase 1 — Reliability and Telemetry Foundations
 
 - [x] Internal telemetry collection and persistence
 - [x] External telemetry ingestion
@@ -253,41 +186,37 @@ The roadmap is organized around measurable engineering capabilities rather than 
 - [ ] Recovery coordination for eligible dead-lettered records
 - [ ] Expanded failure-injection and integration tests
 
-### Phase 2 — Deployment and infrastructure integration
+### Phase 2 — Deployment and Infrastructure Integration
 
 - [ ] Reproducible Docker-based deployment
-- [ ] Configuration and secrets management suitable for deployment
-- [ ] External telemetry integration and clearer service-level boundaries
+- [ ] Deployment-suitable configuration and secrets management
+- [ ] External telemetry integration and clearer service boundaries
 - [ ] Stronger persistence and recovery guarantees
-- [ ] Improved operational dashboards and incident investigation workflows
+- [ ] Improved operational dashboards and incident-investigation workflows
 
-### Phase 3 — Infrastructure intelligence
+### Phase 3 — Infrastructure Intelligence
 
 - [ ] Baseline-based anomaly detection
 - [ ] Time-series forecasting for selected infrastructure metrics
 - [ ] Correlation of telemetry anomalies with health events
 - [ ] Incident summaries grounded in observed evidence
-- [ ] RAG-based retrieval over operational knowledge and incident history
+- [ ] RAG over operational knowledge and incident history
 - [ ] LLM-assisted explanations and remediation recommendations
 - [ ] Human approval and policy safeguards for consequential actions
 
-Roadmap items are planned work and are not represented as completed capabilities.
-
 ## Engineering Principles
 
-- **Observe before acting:** decisions should be grounded in telemetry and health evidence.
-- **Reliability first:** failure detection and recovery must be understandable and testable.
+- **Observe before acting:** Decisions should be grounded in telemetry and health evidence.
+- **Reliability first:** Failure detection and recovery should be understandable and testable.
 - **Human control:** AI recommendations should not automatically trigger risky remediation.
-- **Incremental architecture:** introduce complexity when a demonstrated need justifies it.
+- **Incremental architecture:** Add complexity when a demonstrated need justifies it.
 - **Dogfooding:** ATLAS should monitor and expose the behavior of its own components.
-- **Evidence over buzzwords:** prioritize measurable behavior, clear trade-offs, and reproducible tests.
+- **Evidence over buzzwords:** Prioritize measurable behavior, explicit trade-offs, and reproducible tests.
 
-## Project Status
+## Current Status
 
-ATLAS is an active personal engineering project focused on backend reliability, observability, and AI infrastructure.
-
-The current implementation establishes the telemetry processing and operational-health foundation. The next stages focus on stronger recovery guarantees, reproducible deployment, infrastructure integration, and evaluated AI-assisted intelligence.
+ATLAS is an active personal engineering project focused on backend engineering, infrastructure reliability, and observability. The current implementation establishes a foundation for telemetry processing and operational health. The next stages focus on stronger recovery guarantees, reproducible deployment, infrastructure integration, and evaluated AI-assisted intelligence.
 
 ---
 
-**Built as a hands-on exploration of backend engineering, infrastructure reliability, observability, and AI-assisted systems.**
+*Built as a hands-on exploration of backend engineering, infrastructure reliability, observability, and AI-assisted systems.*
