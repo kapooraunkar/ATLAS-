@@ -1,16 +1,31 @@
-# Virtual Environment
-.venv/
-
-# Python Cache
+@'
+# Python
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
 
-# Environment Variables
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets and local configuration
 .env
+.env.*
+!.env.example
 
-# VS Code Settings
+# Local databases and telemetry data
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Editor and OS files
 .vscode/
-
-# OS Files
 .DS_Store
 Thumbs.db
+'@ | Set-Content .gitignore

@@ -56,6 +56,12 @@ class CircuitBreaker:
 
     def record_failure(self):
         with self.lock:
+
+            print(
+            f"Circuit success recorded: "
+            f"state={self.state.value.upper()}"
+            )
+            
             self.failure_count += 1
             self.half_open_probe_in_progress = False
 

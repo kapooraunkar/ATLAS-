@@ -6,6 +6,10 @@ class HealthEvent(Enum):
     PERSISTENCE_RECOVERED = "persistence_recovered"
     SYSTEM_EMERGENCY = "system_emergency"
 
+    BACKPRESSURE_ELEVATED = "backpressure_elevated"
+    BACKPRESSURE_HIGH = "backpressure_high"
+    BACKPRESSURE_SEVERE = "backpressure_severe"
+    BACKPRESSURE_RECOVERED = "backpressure_recovered"
 
 class SystemHealthBus:
 
