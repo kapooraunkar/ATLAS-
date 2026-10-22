@@ -17,5 +17,9 @@ class SystemHealthBus:
         self.subscribers.append(callback)
 
     def publish(self,event):
-        for callback in self.subscribers:
-            callback(event)
+
+        with self.lock:
+            subscribers = self.subscribers.copy()
+
+            for callback in subscribers:
+                callback(event)
